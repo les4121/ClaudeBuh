@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Компактный клиент МойСклад JSON API 1.2 для этапа обучения (только чтение + явная проводка).
-HTTP-запросы идут через curl.exe (не urllib) — urllib на этой машине периодически
-подвисает намертво на TLS-хендшейке, curl стабильно быстрый."""
+HTTP-запросы идут через curl (не urllib) — urllib на Windows периодически подвисает
+намертво на TLS-хендшейке, curl стабильно быстрый. Кроссплатформенно: curl.exe на Windows,
+curl на Linux/облачных routine."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,6 +13,8 @@ import urllib.parse
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
+
+CURL = shutil.which("curl.exe") or shutil.which("curl") or "curl"
 
 BASE = "https://api.moysklad.ru/api/remap/1.2"
 TOKEN = os.environ.get("MS_TOKEN", "").strip()
@@ -23,7 +27,7 @@ def req(method, path, params=None, body=None, timeout=25):
     url = path if path.startswith("http") else BASE + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    cmd = ["curl.exe", "-sS", "--max-time", str(timeout), "-X", method,
+    cmd = [CURL, "-sS", "--max-time", str(timeout), "-X", method,
            "-H", "Authorization: Bearer " + TOKEN,
            "-H", "Content-Type: application/json",
            "--compressed", "-w", "\n__HTTP_STATUS__%{http_code}"]
