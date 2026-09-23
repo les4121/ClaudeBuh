@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Компактный клиент МойСклад JSON API 1.2 для этапа обучения (только чтение + явная проводка)."""
+"""Компактный клиент МойСклад JSON API 1.2 для этапа обучения (только чтение + явная проводка).
+HTTP-запросы идут через curl.exe (не urllib) — urllib на этой машине периодически
+подвисает намертво на TLS-хендшейке, curl стабильно быстрый."""
 import json
 import os
+import subprocess
 import sys
-import urllib.request
+import tempfile
 import urllib.parse
-import urllib.error
+
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
 
 BASE = "https://api.moysklad.ru/api/remap/1.2"
 TOKEN = os.environ.get("MS_TOKEN", "").strip()
@@ -14,26 +19,38 @@ ORG_IP = "41b8770c-3a48-11e8-9109-f8fc000248b6"          # ИП Кириллов
 ORG_ACC_DEFAULT = "41b87d60-3a48-11e8-9109-f8fc000248b7"  # расчётный счёт по умолчанию
 
 
-def req(method, path, params=None, body=None):
+def req(method, path, params=None, body=None, timeout=25):
     url = path if path.startswith("http") else BASE + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    data = json.dumps(body).encode() if body is not None else None
-    r = urllib.request.Request(url, data=data, method=method)
-    r.add_header("Authorization", "Bearer " + TOKEN)
-    r.add_header("Accept-Encoding", "gzip")
-    r.add_header("Content-Type", "application/json")
+    cmd = ["curl.exe", "-sS", "--max-time", str(timeout), "-X", method,
+           "-H", "Authorization: Bearer " + TOKEN,
+           "-H", "Content-Type: application/json",
+           "--compressed", "-w", "\n__HTTP_STATUS__%{http_code}"]
+    tmp = None
+    if body is not None:
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(body, tmp, ensure_ascii=False)
+        tmp.close()
+        cmd += ["--data-binary", f"@{tmp.name}"]
+    cmd.append(url)
     try:
-        with urllib.request.urlopen(r) as resp:
-            raw = resp.read()
-            if resp.headers.get("Content-Encoding") == "gzip":
-                import gzip
-                raw = gzip.decompress(raw)
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")
-        print(f"HTTP {e.code}: {body}", file=sys.stderr)
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout + 10)
+    finally:
+        if tmp:
+            os.unlink(tmp.name)
+    if p.returncode != 0:
+        print(f"CURL ERROR (exit {p.returncode}): {p.stderr.strip()}", file=sys.stderr)
         sys.exit(1)
+    out = p.stdout
+    marker = "__HTTP_STATUS__"
+    idx = out.rfind(marker)
+    status = int(out[idx + len(marker):].strip())
+    raw = out[:idx]
+    if status >= 400:
+        print(f"HTTP {status}: {raw}", file=sys.stderr)
+        sys.exit(1)
+    return json.loads(raw) if raw.strip() else {}
 
 
 def money(v):
