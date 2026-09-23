@@ -1,0 +1,11 @@
+# Реальные данные выписок и проводок — не в репозиторий
+*.xlsx
+davydov_2026-08.json
+kirillov_2026-08.json
+zaikin_2026-08.json
+day_*.json
+dayK_*.json
+posted_*.jsonl
+
+# Черновые выгрузки/логи
+*.txt
