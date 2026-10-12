@@ -6,6 +6,13 @@ zaikin_2026-08.json
 day_*.json
 dayK_*.json
 posted_*.jsonl
+dayS_*.json
+*_2026-??.json
+zaikin_week_*
+test_*
+*.zip
+*.crt
+*.pem
 
 # Черновые выгрузки/логи
 *.txt
