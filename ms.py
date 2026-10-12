@@ -208,6 +208,19 @@ def cmd_po_set_sum():
     print(f'№{d.get("name")}: sum -> {money(d["sum"])}  desc={d.get("description")!r}')
 
 
+def cmd_po_fix():
+    """ms.py po-fix <doc_id> <counterparty|employee> <agent_id> <expense_id> [description]
+    Меняет контрагента/сотрудника, статью расходов и (опционально) описание у проведённого платежа."""
+    doc_id, kind, aid, eid = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+    body = {"agent": _meta(kind, aid), "expenseItem": _meta("expenseitem", eid)}
+    if len(sys.argv) > 6:
+        body["description"] = sys.argv[6]
+    req("PUT", f"/entity/paymentout/{doc_id}", body=body)
+    x = req("GET", f"/entity/paymentout/{doc_id}", {"expand": "agent,expenseItem"})
+    print(f'№{x.get("name")}: agent={(x.get("agent") or {}).get("name")} | '
+          f'статья={(x.get("expenseItem") or {}).get("name")} | описание={x.get("description")!r}')
+
+
 def cmd_po_delete():
     """ms.py po-delete <doc_id>"""
     doc_id = sys.argv[2]
@@ -236,6 +249,7 @@ CMDS = {
     "po-set-agent": cmd_po_set_agent,
     "po-set-sum": cmd_po_set_sum,
     "po-delete": cmd_po_delete,
+    "po-fix": cmd_po_fix,
 }
 
 if __name__ == "__main__":

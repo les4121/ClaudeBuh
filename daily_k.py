@@ -8,16 +8,20 @@ import datetime, json, re, sys
 sys.path.insert(0, r"C:\pb")
 import ms
 import rules_k
+import rules_d
 import ids
 
 stmt, day = sys.argv[1], sys.argv[2]
 since = "2026-08-01"
 emit_path = None
 overrides = {}
+IP = "kir"
 _a = sys.argv[3:]
 while _a:
     t = _a.pop(0)
-    if t == "--since":
+    if t == "--ip":
+        IP = _a.pop(0)
+    elif t == "--since":
         since = _a.pop(0)
     elif t == "--emit":
         emit_path = _a.pop(0)
@@ -26,6 +30,9 @@ while _a:
         parts = rest.split("|")
         overrides[int(row)] = parts
 recs = json.load(open(stmt, encoding="utf-8"))
+rules = rules_d if IP == "dav" else rules_k
+ACC_NAME = "Дав" if IP == "dav" else "Кириллов"
+ACC_ID = ids.ACC_DAV if IP == "dav" else ids.ACC_KIRILLOV
 
 
 def pdate(s):
@@ -47,21 +54,41 @@ while True:
     off += 100
     if off >= d["meta"]["size"]:
         break
-existing = [x for x in existing if ((x.get("organizationAccount") or {}).get("accountNumber") or "").strip() == "Кириллов"]
+existing = [x for x in existing if ((x.get("organizationAccount") or {}).get("accountNumber") or "").strip() == ACC_NAME]
 used_docs = set()
+
+
+def _compat(r, x):
+    """Документ x по смыслу соответствует строке выписки r (одинаковые суммы бывают у разных операций)."""
+    o = (r["opis"] or "").lower()
+    desc = (x.get("description") or "").lower().strip()
+    if desc and desc[:20] in o:
+        return 2
+    transfer_row = "перевод собственных средств" in o
+    if transfer_row and not desc.startswith(("оплата в", "комиссия", "плата за")):
+        return 1
+    return 0
 
 
 def find_existing(r):
     kop = round(r["debit"] * 100)
     ad = pdate(r["date_auth"])
+    best, best_key = None, None
     for x in existing:
         if x["id"] in used_docs or x["sum"] != kop:
             continue
         dd = (datetime.date.fromisoformat(x["moment"][:10]) - ad).days
-        if 0 <= dd <= 7:
-            used_docs.add(x["id"])
-            return x
-    return None
+        if not (0 <= dd <= 7):
+            continue
+        sc = _compat(r, x)
+        if sc == 0:
+            continue
+        key = (-sc, dd)
+        if best is None or key < best_key:
+            best, best_key = x, key
+    if best:
+        used_docs.add(best["id"])
+    return best
 
 
 # --- возвраты/отмены Avito: сопоставление с покупками (по сумме и мерчанту)
@@ -81,7 +108,7 @@ def merch_debit(o):
 refunds = [r for r in recs if r["type"] == "Кредит" and RE_REFUND.search((r["opis"] or "").lower())]
 refunded_debit = {}   # debit row -> credit row
 unmatched_refunds = []
-debits = [r for r in recs if r["type"] == "Дебет"]
+debits = [r for r in recs if r["type"] == "Дебет" and r["date_auth"]]
 for c in sorted(refunds, key=lambda x: (dkey(x["date_auth"]), x["row"])):
     cands = [d for d in debits
              if d["row"] not in refunded_debit and round(d["debit"] * 100) == round(c["credit"] * 100)
@@ -112,7 +139,7 @@ if day == "refunds":
 # --- таблица дня
 rows = []
 for r in sorted(recs, key=lambda x: (dkey(x["date_auth"] or "01.01.2000"), x["row"])):
-    c = rules_k.classify(r)
+    c = rules.classify(r)
     if r["row"] in overrides and r["type"] == "Дебет":
         p = overrides[r["row"]]
         c = {"skip": False, "cp": p[0], "art": p[1], "conf": "польз.", "note": "указано пользователем",
@@ -192,7 +219,7 @@ if emit_path:
             continue
         d, m, y = r["date_auth"].split(".")
         ops.append({"row": r["row"], "agent_type": atype, "agent_id": aid, "expense_id": ids.EXP[art],
-                    "account_id": ids.ACC_KIRILLOV, "sum_kop": round(r["debit"] * 100),
+                    "account_id": ACC_ID, "sum_kop": round(r["debit"] * 100),
                     "moment": f"{y}-{m}-{d} 00:00:00", "description": c.get("desc") or default_desc(r)})
     json.dump(ops, open(emit_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"записано в {emit_path}: {len(ops)} оп.; не разобрано: {unresolved or 'нет'}")
