@@ -9,6 +9,7 @@ sys.path.insert(0, r"C:\pb")
 import ms
 import rules_k
 import rules_d
+import rules_z
 import ids
 
 stmt, day = sys.argv[1], sys.argv[2]
@@ -30,9 +31,13 @@ while _a:
         parts = rest.split("|")
         overrides[int(row)] = parts
 recs = json.load(open(stmt, encoding="utf-8"))
-rules = rules_d if IP == "dav" else rules_k
-ACC_NAME = "Дав" if IP == "dav" else "Кириллов"
-ACC_ID = ids.ACC_DAV if IP == "dav" else ids.ACC_KIRILLOV
+rules = {"dav": rules_d, "zai": rules_z}.get(IP, rules_k)
+ACC_NAME = {"dav": "Дав", "zai": "Зайкин"}.get(IP, "Кириллов")
+ACC_ID = {"dav": ids.ACC_DAV, "zai": ids.ACC_ZAIKIN}.get(IP, ids.ACC_KIRILLOV)
+if IP == "zai":  # в выписках Зайкина нет «Даты авторизации» — берём «Дату проведения»
+    for _r in recs:
+        if not _r["date_auth"]:
+            _r["date_auth"] = _r["date_provod"]
 
 
 def pdate(s):
